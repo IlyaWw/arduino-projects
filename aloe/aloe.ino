@@ -22,6 +22,8 @@ Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, TFT_RST);
 
 // Soil sensor
 #define SOIL_PIN A0
+const int airValue = 571;
+const int waterValue = 217;
 
 // Light sensor
 #define LIGHT_PIN 2
@@ -40,10 +42,13 @@ const int drySoil = 20;
 const int hotTemp = 30;
 const int coldTemp = 10;
 
-// Sleep mode params
-// const unsigned long SLEEP_MODE_TIMEOUT = 10000;  // 10 seconds
-// bool sleepMode = false;
-// unsigned long lastInteractionTime = 0;
+// Loop and sleep mode params setup
+int tick = 0;
+const unsigned int msPerTick = 100;
+const unsigned int ticksPerScreenUpdate = 10;
+const unsigned long sleepModeTimeout = 600;  // 1 minute (msPerTick * sleepModeTimeout)
+bool sleepMode = false;
+unsigned long lastInteractionTime = 0;
 
 // Base pixel art
 const uint16_t epd_bitmap_aloe[] PROGMEM = {
@@ -259,18 +264,7 @@ const uint16_t epd_bitmap_cold[] PROGMEM = {
 	0xffff, 0xffff, 0xffff, 0xffff, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0xffff, 0xffff, 0xffff, 0xffff
 };
 
-// const int epd_bitmap_array_LEN = 7;
-// const uint16_t* epd_bitmap_array[epd_bitmap_array_LEN] = {
-// 	epd_bitmap_aloe,
-// 	epd_bitmap_smile,
-// 	epd_bitmap_sleep,
-// 	epd_bitmap_dry,
-// 	epd_bitmap_wet,
-// 	epd_bitmap_hot,
-// 	epd_bitmap_cold
-// };
-
-void drawInScale(uint16_t bitmap[]) {
+void drawPlant(uint16_t bitmap[]) {
 	const int sizePx = 240;
 	const int sizeImg = 48;
 	const int scale = 5;
@@ -302,8 +296,6 @@ void drawFace(uint16_t bitmap[]) {
 }
 
 int toMoisturePercent(int value) {
-	const int airValue = 571;
-	const int waterValue = 217;
 	return int((1 - float(value - waterValue) / (airValue - waterValue)) * 100);
 }
 
@@ -321,24 +313,24 @@ void setup() {
 	// Initialize tft screen
 	pinMode(TFT_BLK, OUTPUT);
 	digitalWrite(TFT_BLK, HIGH);
-
 	tft.init(240, 240, SPI_MODE3);
-
 	tft.setRotation(2);
-	tft.fillScreen(ST77XX_BLACK);
 
+	// Write greetings message
+	tft.fillScreen(ST77XX_BLACK);
 	tft.setCursor(20, 100);
 	tft.setTextColor(ST77XX_WHITE);
 	tft.setTextSize(3);
 	tft.println("HELLO, ALOE");
-	tft.setTextSize(2);
 
 	delay(1000);
+
+	tft.setTextSize(2);
 	tft.fillScreen(ST77XX_BLACK);
-	drawInScale(epd_bitmap_aloe);
+	drawPlant(epd_bitmap_aloe);
 }
 
-void loop() {
+void updateScreen() {
 	tft.fillRect(180, 192, 60, 64, ST77XX_BLACK);
 
 	uint16_t emotion = epd_bitmap_smile;
@@ -348,18 +340,10 @@ void loop() {
 	if (lightSensorState == LOW) {
 		tft.setCursor(200, 192);
 		tft.println("day");
-
-		// Wake up
-		// digitalWrite(TFT_BLK, HIGH);
-		// tft.writeCommand(0x11);
 	} else {
 		tft.setCursor(180, 192);
 		tft.println("night");
 		emotion = epd_bitmap_sleep;
-
-		// Send the display driver to sleep
-		// digitalWrite(TFT_BLK, LOW);
-		// tft.writeCommand(0x10);
 	}
 
 	// Soil sensor
@@ -381,23 +365,39 @@ void loop() {
 		tft.setCursor(180, 224);
 		tft.print(tempC);
 
-		if (tempC > 30) {
+		if (tempC > hotTemp) {
 			emotion = epd_bitmap_hot;
-		} else if (tempC < 10) {
+		} else if (tempC < coldTemp) {
 			emotion = epd_bitmap_cold;
 		}
 	}
 
-	// Button test
-	// int touchState = digitalRead(TOUCH_PIN);
-	// if (touchState == HIGH) {
-	//   // tft.setCursor(180, 48);
-	//   // tft.println("touch");
-	//   Serial.println("touch");
-	// } else {
-	//   Serial.println("no");
-	// }
-
 	drawFace(emotion);
-	delay(1000);
+}
+
+void loop() {
+	if (tick == ticksPerScreenUpdate) {
+		tick = 0;
+		updateScreen();
+	}
+
+	tick += 1;
+
+	// Button
+	int touchState = digitalRead(TOUCH_PIN);
+	if (touchState == HIGH) {
+		Serial.println("touch");
+		lastInteractionTime = 0;
+		// Wake up
+		digitalWrite(TFT_BLK, HIGH);
+		tft.writeCommand(0x11);
+	} else if (lastInteractionTime < sleepModeTimeout) {
+		lastInteractionTime += 1;
+	} else if (lastInteractionTime == sleepModeTimeout) {
+		// Send the display driver to sleep
+		digitalWrite(TFT_BLK, LOW);
+		tft.writeCommand(0x10);
+	}
+
+	delay(msPerTick);
 }

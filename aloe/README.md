@@ -12,8 +12,8 @@
 
 - [x] Setup sensors and output data
 - [x] Output basic pixel art
-- [ ] Add touch button and sleep mode
+- [x] Add touch button and sleep mode
 - [ ] Add pixel art animation
 - [ ] Rewire scheme and code (Arduino -> ESP32)
+- [ ] Switch to battery power source
 - [ ] Finalize code, draw diagram and solder
-
